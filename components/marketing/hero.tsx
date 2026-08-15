@@ -21,6 +21,7 @@ export function Hero() {
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button
+              nativeButton={false}
               render={<Link href="/dashboard" />}
               size="lg"
               className="bg-accent text-accent-foreground hover:bg-accent/90 font-medium"
@@ -28,7 +29,13 @@ export function Hero() {
               Get a demo
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Button>
-            <Button render={<Link href="/dashboard" />} size="lg" variant="outline" className="font-medium">
+            <Button
+              nativeButton={false}
+              render={<Link href="/dashboard" />}
+              size="lg"
+              variant="outline"
+              className="font-medium"
+            >
               See a live dashboard
             </Button>
           </div>

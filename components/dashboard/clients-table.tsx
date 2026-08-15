@@ -18,6 +18,7 @@ export function ClientsTable() {
           <Button
             variant="ghost"
             size="sm"
+            nativeButton={false}
             className="text-sm font-medium"
             render={<Link href="/exceptions" />}
           >

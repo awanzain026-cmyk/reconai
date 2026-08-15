@@ -31,12 +31,14 @@ export function SiteHeader() {
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
+            nativeButton={false}
             className="hidden text-sm font-medium sm:inline-flex"
             render={<Link href="/dashboard" />}
           >
             Log in
           </Button>
           <Button
+            nativeButton={false}
             render={<Link href="/dashboard" />}
             className="bg-accent text-accent-foreground hover:bg-accent/90 text-sm font-medium"
           >

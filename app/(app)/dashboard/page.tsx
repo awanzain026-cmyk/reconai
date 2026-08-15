@@ -14,6 +14,7 @@ export default function DashboardPage() {
         description="Reconciliation status across your client book"
         actions={
           <Button
+            nativeButton={false}
             render={<Link href="/upload" />}
             className="bg-accent text-accent-foreground hover:bg-accent/90 font-medium"
           >
