@@ -26,8 +26,8 @@ export default function UploadPage() {
       />
 
       <div className="flex-1 space-y-6 px-6 py-6">
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Card className="gap-5 lg:col-span-2">
+        <div className="grid min-w-0 gap-6 lg:grid-cols-3">
+          <Card className="min-w-0 gap-5 lg:col-span-2">
             <CardHeader>
               <CardTitle className="text-base font-semibold">New reconciliation run</CardTitle>
               <CardDescription>
@@ -65,12 +65,12 @@ export default function UploadPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded-lg bg-secondary/60 px-4 py-3">
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+              <div className="flex flex-col gap-3 rounded-lg bg-secondary/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
                   ReconAI will auto-match transactions and flag exceptions for review
                 </p>
-                <Button className="bg-accent text-accent-foreground hover:bg-accent/90 font-medium">
+                <Button className="bg-accent text-accent-foreground hover:bg-accent/90 shrink-0 font-medium">
                   Run reconciliation
                 </Button>
               </div>
@@ -105,12 +105,12 @@ export default function UploadPage() {
           </Card>
         </div>
 
-        <Card className="gap-4">
+        <Card className="min-w-0 gap-4">
           <CardHeader>
             <CardTitle className="text-base font-semibold">Recent uploads</CardTitle>
             <CardDescription>Latest statement and ledger imports across your client book</CardDescription>
           </CardHeader>
-          <CardContent className="px-0">
+          <CardContent className="min-w-0 px-0">
             <Table>
               <TableHeader>
                 <TableRow>

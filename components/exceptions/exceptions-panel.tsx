@@ -41,8 +41,8 @@ export function ExceptionsPanel() {
   }
 
   return (
-    <Card className="gap-4">
-      <CardContent className="px-0">
+    <Card className="min-w-0 gap-4">
+      <CardContent className="min-w-0 px-0">
         <div className="flex flex-col gap-4 px-6 pb-2 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={filter} onValueChange={(v) => setFilter(v as "open" | "resolved")}>
             <TabsList>

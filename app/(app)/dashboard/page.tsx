@@ -8,7 +8,7 @@ import { ClientsTable } from "@/components/dashboard/clients-table"
 
 export default function DashboardPage() {
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-w-0 flex-1 flex-col">
       <AppTopbar
         title="Overview"
         description="Reconciliation status across your client book"
@@ -25,11 +25,13 @@ export default function DashboardPage() {
       />
       <div className="flex-1 space-y-6 px-6 py-6">
         <StatCards />
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
+        <div className="grid min-w-0 gap-6 lg:grid-cols-3">
+          <div className="min-w-0 lg:col-span-2">
             <ClientsTable />
           </div>
-          <MatchVolumeChart />
+          <div className="min-w-0">
+            <MatchVolumeChart />
+          </div>
         </div>
       </div>
     </div>

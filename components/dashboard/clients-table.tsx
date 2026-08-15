@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
-import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from "@/components/ui/card"
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -10,24 +10,24 @@ import { clientAccounts } from "@/lib/mock-data"
 
 export function ClientsTable() {
   return (
-    <Card className="gap-4">
-      <CardHeader>
-        <CardTitle className="text-base font-semibold">Client accounts</CardTitle>
-        <CardDescription>Sync status across every account you manage</CardDescription>
-        <CardAction>
-          <Button
-            variant="ghost"
-            size="sm"
-            nativeButton={false}
-            className="text-sm font-medium"
-            render={<Link href="/exceptions" />}
-          >
-            View exceptions
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
-        </CardAction>
+    <Card className="min-w-0 gap-4">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle className="text-base font-semibold">Client accounts</CardTitle>
+          <CardDescription>Sync status across every account you manage</CardDescription>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          nativeButton={false}
+          className="shrink-0 self-start text-sm font-medium sm:self-auto"
+          render={<Link href="/exceptions" />}
+        >
+          View exceptions
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Button>
       </CardHeader>
-      <CardContent className="px-0">
+      <CardContent className="min-w-0 px-0">
         <Table>
           <TableHeader>
             <TableRow>
