@@ -6,4 +6,4 @@ review exceptions, and track reconciliation progress on a dashboard.
 
 Monorepo: `backend/` (FastAPI + SQLite/Neon Postgres) and `frontend/` (Next.js).
 
-Last updated: 2026-08-17
+Last updated: 2026-08-17 04:10
