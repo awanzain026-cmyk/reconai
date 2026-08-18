@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DemoButton } from "@/components/marketing/demo-button"
 import { ProductPreview } from "@/components/marketing/product-preview"
 
 export function Hero() {
@@ -20,23 +21,21 @@ export function Hero() {
             every account you manage.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Button
-              nativeButton={false}
-              render={<Link href="/dashboard" />}
+            <DemoButton
               size="lg"
               className="bg-accent text-accent-foreground hover:bg-accent/90 font-medium"
             >
-              Get a demo
+              View live demo
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            </DemoButton>
             <Button
               nativeButton={false}
-              render={<Link href="/dashboard" />}
+              render={<Link href="/login?mode=signup" />}
               size="lg"
               variant="outline"
               className="font-medium"
             >
-              See a live dashboard
+              Sign up free
             </Button>
           </div>
           <p className="mt-6 text-sm text-muted-foreground">

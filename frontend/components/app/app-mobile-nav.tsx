@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, UploadCloud, TriangleAlert } from "lucide-react"
+import { LayoutDashboard, UploadCloud, TriangleAlert, Settings } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
 
@@ -10,6 +10,7 @@ const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Upload", href: "/upload", icon: UploadCloud },
   { label: "Exceptions", href: "/exceptions", icon: TriangleAlert },
+  { label: "Settings", href: "/settings", icon: Settings },
 ]
 
 export function AppMobileNav() {

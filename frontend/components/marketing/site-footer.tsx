@@ -1,17 +1,32 @@
+import Link from "next/link"
 import { Logo } from "@/components/logo"
 
 const columns = [
   {
     title: "Product",
-    links: ["Auto-matching", "Exception review", "Multi-client dashboard", "Integrations"],
+    links: [
+      { label: "Auto-matching", href: "#platform" },
+      { label: "Exception review", href: "#platform" },
+      { label: "Multi-client dashboard", href: "/login?mode=signup" },
+      { label: "Integrations", href: "#platform" },
+    ],
   },
   {
     title: "Firm",
-    links: ["Security", "Compliance", "Status", "Support"],
+    links: [
+      { label: "Security", href: "#security" },
+      { label: "Compliance", href: "#security" },
+      { label: "Status", href: "#platform" },
+      { label: "Support", href: "/login" },
+    ],
   },
   {
     title: "Company",
-    links: ["About", "Careers", "Contact"],
+    links: [
+      { label: "About", href: "/" },
+      { label: "Careers", href: "/" },
+      { label: "Contact", href: "/login" },
+    ],
   },
 ]
 
@@ -32,10 +47,19 @@ export function SiteFooter() {
               <h3 className="text-sm font-semibold text-foreground">{col.title}</h3>
               <ul className="mt-4 space-y-3">
                 {col.links.map((link) => (
-                  <li key={link}>
-                    <a href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                      {link}
-                    </a>
+                  <li key={link.label}>
+                    {link.href.startsWith("#") ? (
+                      <a href={link.href} className="text-sm text-muted-foreground hover:text-foreground">
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        href={link.href}
+                        className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -74,8 +74,13 @@ export function AppSidebar() {
 
       <div className="border-t border-sidebar-border p-3">
         <Link
-          href="/dashboard"
-          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          href="/settings"
+          className={cn(
+            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+            pathname === "/settings"
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground/70",
+          )}
         >
           <Settings className="h-4 w-4" aria-hidden="true" />
           Settings

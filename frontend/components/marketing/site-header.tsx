@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Logo } from "@/components/logo"
 import { Button } from "@/components/ui/button"
+import { DemoButton } from "@/components/marketing/demo-button"
 
 const navLinks = [
   { label: "Platform", href: "#platform" },
@@ -37,13 +38,9 @@ export function SiteHeader() {
           >
             Log in
           </Button>
-          <Button
-            nativeButton={false}
-            render={<Link href="/dashboard" />}
-            className="bg-accent text-accent-foreground hover:bg-accent/90 text-sm font-medium"
-          >
-            Get a demo
-          </Button>
+          <DemoButton className="bg-accent text-accent-foreground hover:bg-accent/90 text-sm font-medium">
+            View live demo
+          </DemoButton>
         </div>
       </div>
     </header>

@@ -198,6 +198,76 @@ def me(current: User = Depends(get_current_user)):
     return {"user_id": current.id, "email": current.email}
 
 
+# ─── Demo access (public landing-page CTA) ───
+DEMO_EMAIL = "demo@reconai.app"
+DEMO_PASSWORD = "reconai-demo"
+DEMO_BANK_CSV = """date,amount,reference,description
+2026-08-01,2500.00,INV-1001,Client A payment
+2026-08-02,-1249.00,INV-1002,AWS hosting
+2026-08-03,850.00,,Office rent deposit
+2026-08-05,-320.50,INV-1004,Adobe subscription
+2026-08-06,1200.00,INV-1005,Client B payment
+2026-08-07,-75.00,,Coffee supplies
+2026-08-08,540.00,INV-1007,Client C payment
+2026-08-09,-210.00,INV-1008,Phone bill
+2026-08-10,99.00,,Subscriptions
+2026-08-11,-500.00,INV-1010,ATM withdrawal
+"""
+DEMO_INTERNAL_CSV = """date,amount,reference,description
+2026-08-01,2500.00,INV-1001,Client A
+2026-08-02,-1249.50,INV-1002,AWS hosting
+2026-08-03,850.00,,Rent deposit
+2026-08-05,-320.50,INV-1004,Adobe
+2026-08-06,1200.00,INV-1005,Client B
+2026-08-07,-75.00,,Coffee
+2026-08-08,540.00,INV-1007,Client C
+2026-08-10,99.00,,Subscriptions
+"""
+
+
+def _seed_demo_data(db: Session, user_id: int) -> None:
+    """Populate the demo account with a sample reconciliation (two lists, then
+    run the real matching engine so matches + exceptions exist on first login)."""
+    for source, raw in (("bank", DEMO_BANK_CSV), ("internal", DEMO_INTERNAL_CSV)):
+        rows, rejections = parse_csv(raw.encode("utf-8"))
+        batch = Import(
+            user_id=user_id,
+            source=source,
+            filename=f"demo_{source}.csv",
+            imported=len(rows),
+            rejected=len(rejections),
+        )
+        db.add(batch)
+        db.flush()
+        for row in rows:
+            db.add(Transaction(
+                user_id=user_id,
+                import_id=batch.id,
+                source=source,
+                date=row["date"],
+                amount=row["amount"],
+                description=row["description"],
+                reference=row["reference"],
+            ))
+    db.commit()
+    reconcile(db, user_id)
+
+
+@app.post("/auth/demo", response_model=AuthOut)
+def demo_login(db: Session = Depends(get_db)):
+    """One-click demo access for the landing page. Creates (or reuses) a shared
+    demo account seeded with sample data on first use — no signup friction."""
+    user = db.query(User).filter(User.email == DEMO_EMAIL).first()
+    if user is None:
+        user = User(email=DEMO_EMAIL, password_hash=hash_password(DEMO_PASSWORD))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        _seed_demo_data(db, user.id)
+    return {"access_token": create_token(user.id), "token_type": "bearer",
+            "user_id": user.id, "email": user.email}
+
+
 # ─── Imports (PROTECTED) ───
 @app.post("/imports", response_model=ImportCreateOut, status_code=201)
 async def create_import(

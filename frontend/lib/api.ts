@@ -120,6 +120,10 @@ export const api = {
     })
   },
 
+  async demoLogin() {
+    return request<AuthResponse>("/auth/demo", { method: "POST" })
+  },
+
   async uploadCsv(source: "bank" | "internal", file: File) {
     const form = new FormData()
     form.append("source", source)
