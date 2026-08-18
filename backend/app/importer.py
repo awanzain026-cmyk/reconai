@@ -8,6 +8,8 @@ Amount handling: a single `amount` column, OR separate `debit`/`credit`
 columns (credit positive, debit negative). Parenthesized amounts are negative.
 """
 
+from __future__ import annotations
+
 import csv
 import io
 import re
