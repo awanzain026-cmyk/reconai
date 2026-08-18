@@ -11,9 +11,3 @@ dependencies = [
     "pyjwt==2.13.0",
     "python-multipart==0.0.32",
 ]
-
-[tool.fastapi]
-entrypoint = "main:app"
-
-[tool.setuptools]
-py-modules = ["auth", "db", "importer", "main", "matcher", "models"]

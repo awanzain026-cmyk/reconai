@@ -13,11 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from auth import create_token, get_current_user, hash_password, verify_password
-from db import Base, engine, get_db
-from importer import parse_csv
-from matcher import current_summary, reconcile
-from models import ExceptionRecord, Import, Match, Transaction, User, _utcnow
+from app.auth import create_token, get_current_user, hash_password, verify_password
+from app.db import Base, engine, get_db
+from app.importer import parse_csv
+from app.matcher import current_summary, reconcile
+from app.models import ExceptionRecord, Import, Match, Transaction, User, _utcnow
 
 # Create tables if they don't exist (idempotent). In production we'd use migrations.
 Base.metadata.create_all(bind=engine)

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from models import ExceptionRecord, Match, Transaction
+from app.models import ExceptionRecord, Match, Transaction
 
 
 @dataclass
