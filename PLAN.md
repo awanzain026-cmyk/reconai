@@ -147,14 +147,23 @@ concept behind it, and any questions. The stage is not done until the concept is
   is the progress metric, the exceptions list is the work queue. Server state changes drive
   the UI refresh (same `refreshKey` pattern as Ledgerly).
 
-### Stage 7 — Deployment (reused targets)
-- **Backend → FastAPI Cloud**: Application Directory = `backend`, env `DATABASE_URL`; known
-  gotchas from Ledgerly (cold starts → first request may 500 once, trailing-slash URL hygiene)
-- **Frontend → Vercel**: env `NEXT_PUBLIC_API_URL`
-- **Database → Neon Postgres**: connection-string swap; verify `sslmode` / `channel_binding`
-- CORS updated to the live domains
-- ➤ Core concept: **none new** — repeat the proven Ledgerly deployment runbook. Verify live
-  via Playwright: signup → upload two CSVs → reconcile → resolve an exception.
+### Stage 7 — Deployment (reused targets) ✅
+- **Backend → FastAPI Cloud**: deployed via `fastapi deploy` from `backend/` (app root =
+  `backend`), repo restructured to `app/` package (`app/main.py` auto-detected), deps declared
+  in `pyproject.toml` (`fastapi[standard]` + pinned versions), Python pinned `==3.12.*`,
+  `from __future__ import annotations` in `importer.py` (fixes `datetime.date` annotation crash
+  on 3.12), `DATABASE_URL` env set to Neon. App dir setting left EMPTY (CLI already uploads
+  `backend` as root). Live at `https://reconai-2992db9d.fastapicloud.dev`
+- **Frontend → Vercel**: env `NEXT_PUBLIC_API_URL=https://reconai-2992db9d.fastapicloud.dev`;
+  live at `https://reconai-orcin.vercel.app`
+- **Database → Neon Postgres**: connection-string swap verified (`+psycopg` scheme, all tables
+  created); signup/login round-trip against live backend confirms persistence
+- CORS: backend wildcard `https://.*\.vercel\.app` verified against the live frontend origin
+- ➤ Core concept: **none new** — repeat the proven Ledgerly deployment runbook. Verified live
+  via Playwright: signup → upload two CSVs → reconcile (8 bank / 6 internal / 5 matched /
+  4 exceptions) → resolve an exception (4→3) → dashboard KPIs reflect live state.
+  Gotcha recap: Application Directory must stay empty for CLI deploys; cloud installs deps from
+  `pyproject.toml`, NOT `requirements.txt`; pin Python for wheel availability.
 
 ### Stage 8 — Final Review & Learnings
 - Walk through each stage's core concept and how it built the single workflow
