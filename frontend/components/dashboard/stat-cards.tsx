@@ -19,7 +19,7 @@ export function StatCards({ summary }: { summary: ReconcileSummary }) {
       value: summary.matched.toLocaleString(),
       icon: CircleCheck,
       tone: "positive",
-      note: `${matchRate}% of the bank list · ${summary.method_counts.reference ?? 0} by reference, ${summary.method_counts.amount_date ?? 0} by amount+date`,
+      note: `${matchRate}% of the bank list · ${summary.method_counts.reference ?? 0} by reference, ${summary.method_counts.amount_date ?? 0} by amount+date${(summary.method_counts.manual ?? 0) > 0 ? `, ${summary.method_counts.manual} by hand` : ""}`,
     },
     {
       label: "Bank unmatched",

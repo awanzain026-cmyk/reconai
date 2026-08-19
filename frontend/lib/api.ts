@@ -50,6 +50,17 @@ export type Exception = {
   internal_txn: ExceptionTxn | null
 }
 
+export type Suggestion = {
+  transaction_id: number
+  source: "bank" | "internal"
+  date: string
+  amount: number
+  reference: string | null
+  description: string | null
+  confidence: number
+  reasons: string[]
+}
+
 export class ApiError extends Error {
   status: number
 
@@ -151,6 +162,17 @@ export const api = {
     return request<Exception>(`/exceptions/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    })
+  },
+
+  async getSuggestions(exceptionId: number) {
+    return request<Suggestion[]>(`/exceptions/${exceptionId}/suggestions`)
+  },
+
+  async matchException(exceptionId: number, matchTransactionId: number) {
+    return request<Exception>(`/exceptions/${exceptionId}/match`, {
+      method: "POST",
+      body: JSON.stringify({ match_transaction_id: matchTransactionId }),
     })
   },
 }

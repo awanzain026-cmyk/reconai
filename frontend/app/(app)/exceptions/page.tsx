@@ -38,6 +38,16 @@ export default function ExceptionsPage() {
     }
   }
 
+  async function matchException(id: number, matchTransactionId: number) {
+    setItems((prev) => prev.map((e) => (e.id === id ? { ...e, status: "resolved" } : e)))
+    try {
+      await api.matchException(id, matchTransactionId)
+    } catch {
+      await load()
+      throw new Error("Failed to match")
+    }
+  }
+
   const openExceptions = items.filter((e) => e.status === "open")
   const mismatches = openExceptions.filter((e) => e.exception_type === "mismatch").length
 
@@ -90,6 +100,7 @@ export default function ExceptionsPage() {
           <ExceptionsPanel
             items={items}
             onResolve={resolve}
+            onMatch={matchException}
             loading={loading}
             error={error}
             onRetry={() => {

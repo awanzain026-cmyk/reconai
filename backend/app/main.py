@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.auth import create_token, get_current_user, hash_password, verify_password
 from app.db import Base, engine, get_db
 from app.importer import parse_csv
-from app.matcher import current_summary, reconcile
+from app.matcher import create_manual_match, current_summary, reconcile, suggest_matches
 from app.models import ExceptionRecord, Import, Match, Transaction, User, _utcnow
 
 # Create tables if they don't exist (idempotent). In production we'd use migrations.
@@ -128,6 +128,23 @@ class ExceptionOut(BaseModel):
 
 class ExceptionUpdateIn(BaseModel):
     status: str = Field(pattern="^(open|resolved)$")
+
+
+class SuggestionOut(BaseModel):
+    """One candidate transaction the user could match an unmatched exception to,
+    with the confidence score and the signals that produced it."""
+    transaction_id: int
+    source: str
+    date: date
+    amount: float
+    reference: str | None
+    description: str | None
+    confidence: int
+    reasons: List[str]
+
+
+class ManualMatchIn(BaseModel):
+    match_transaction_id: int
 
 
 def _exception_out(db: Session, rec: ExceptionRecord) -> ExceptionOut:
@@ -421,4 +438,82 @@ def update_exception(
     rec.resolved_at = _utcnow() if payload.status == "resolved" else None
     db.commit()
     db.refresh(rec)
+    return _exception_out(db, rec)
+
+
+@app.get("/exceptions/{exception_id}/suggestions", response_model=List[SuggestionOut])
+def exception_suggestions(
+    exception_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Smart auto-match suggestions for an open unmatched exception: the
+    opposite-list transactions it could plausibly be, ranked by confidence
+    (amount + date + description signals), with the reasons shown. Already-paired
+    transactions are excluded so every suggestion is actionable."""
+    rec = db.get(ExceptionRecord, exception_id)
+    if rec is None or rec.user_id != current.id:
+        raise HTTPException(status_code=404, detail="Exception not found")
+    if rec.exception_type != "unmatched" or rec.status != "open":
+        return []
+    txn = db.get(Transaction, rec.transaction_id)
+    if txn is None:
+        return []
+    return [
+        SuggestionOut(
+            transaction_id=t.id,
+            source=t.source,
+            date=t.date,
+            amount=t.amount,
+            reference=t.reference,
+            description=t.description,
+            confidence=score,
+            reasons=reasons,
+        )
+        for t, score, reasons in suggest_matches(db, txn)
+    ]
+
+
+@app.post("/exceptions/{exception_id}/match", response_model=ExceptionOut)
+def match_exception(
+    exception_id: int,
+    payload: ManualMatchIn,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Resolve an unmatched exception by pairing its transaction to a chosen
+    opposite-list transaction. Stored as a manual match, so it survives future
+    re-reconciliations instead of being recomputed away."""
+    rec = db.get(ExceptionRecord, exception_id)
+    if rec is None or rec.user_id != current.id:
+        raise HTTPException(status_code=404, detail="Exception not found")
+    if rec.status != "open":
+        raise HTTPException(status_code=400, detail="Exception is already resolved")
+    if rec.exception_type != "unmatched":
+        raise HTTPException(status_code=400, detail="Only unmatched exceptions can be matched directly")
+
+    txn = db.get(Transaction, rec.transaction_id)
+    candidate = db.get(Transaction, payload.match_transaction_id)
+    if txn is None or candidate is None or candidate.user_id != current.id:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if candidate.source == txn.source:
+        raise HTTPException(status_code=422, detail="Candidate must be on the opposite list")
+    if candidate.id == txn.id:
+        raise HTTPException(status_code=422, detail="Cannot match a transaction to itself")
+
+    already = (
+        db.query(Match)
+        .filter(
+            Match.user_id == current.id,
+            (Match.bank_txn_id == txn.id)
+            | (Match.internal_txn_id == txn.id)
+            | (Match.bank_txn_id == candidate.id)
+            | (Match.internal_txn_id == candidate.id),
+        )
+        .first()
+    )
+    if already is not None:
+        raise HTTPException(status_code=400, detail="One of these transactions is already matched")
+
+    create_manual_match(db, rec, candidate)
     return _exception_out(db, rec)

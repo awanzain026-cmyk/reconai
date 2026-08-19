@@ -46,6 +46,17 @@ export default function DashboardPage() {
     await load()
   }
 
+  async function matchException(id: number, matchTransactionId: number) {
+    setExceptions((prev) => prev.map((e) => (e.id === id ? { ...e, status: "resolved" } : e)))
+    try {
+      await api.matchException(id, matchTransactionId)
+    } catch {
+      await load() // revert to server truth on failure
+      throw new Error("Failed to match")
+    }
+    await load()
+  }
+
   const noData = summary && summary.bank_total === 0 && summary.internal_total === 0
   const onlyOneSide =
     summary &&
@@ -129,6 +140,7 @@ export default function DashboardPage() {
             <ExceptionsPanel
               items={exceptions}
               onResolve={resolve}
+              onMatch={matchException}
               initialFilter="open"
               showAllLink
             />
