@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   ArrowRight,
   CheckCircle2,
+  FileDown,
   Loader2,
   Sparkles,
   Trash2,
@@ -43,6 +44,9 @@ export default function UploadPage() {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [downloadingTemplate, setDownloadingTemplate] = useState<"bank" | "internal" | null>(
+    null,
+  )
 
   const loadImports = useCallback(async () => {
     try {
@@ -94,6 +98,17 @@ export default function UploadPage() {
     }
   }
 
+  async function handleDownloadTemplate(source: "bank" | "internal") {
+    setDownloadingTemplate(source)
+    try {
+      await api.downloadTemplate(source)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not download the template.")
+    } finally {
+      setDownloadingTemplate(null)
+    }
+  }
+
   const ready = Boolean(bankFile && internalFile)
 
   return (
@@ -115,16 +130,46 @@ export default function UploadPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-6 sm:grid-cols-2">
-                <Dropzone
-                  label="Bank statement"
-                  description="Exported directly from the bank portal"
-                  onFileChange={setBankFile}
-                />
-                <Dropzone
-                  label="Internal records"
-                  description="General ledger export from your accounting system"
-                  onFileChange={setInternalFile}
-                />
+                <div className="space-y-2">
+                  <Dropzone
+                    label="Bank statement"
+                    description="Exported directly from the bank portal"
+                    onFileChange={setBankFile}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadTemplate("bank")}
+                    disabled={downloadingTemplate === "bank"}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  >
+                    {downloadingTemplate === "bank" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    Download sample CSV
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  <Dropzone
+                    label="Internal records"
+                    description="General ledger export from your accounting system"
+                    onFileChange={setInternalFile}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadTemplate("internal")}
+                    disabled={downloadingTemplate === "internal"}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  >
+                    {downloadingTemplate === "internal" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    Download sample CSV
+                  </button>
+                </div>
               </div>
 
               {error ? (

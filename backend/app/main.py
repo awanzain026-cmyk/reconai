@@ -4,11 +4,12 @@ The Next.js frontend (localhost:3000, later the Vercel domain) is a different
 origin than the API, so CORS is configured from the start — not retrofitted.
 """
 
+import csv
 import io
 from datetime import date, datetime
 from typing import List
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -285,6 +286,46 @@ def demo_login(db: Session = Depends(get_db)):
             "user_id": user.id, "email": user.email}
 
 
+# ─── Templates ───
+# Sample CSVs that match the importer's expected columns. Public: they contain
+# no user data, just a reference format users can download from the upload page.
+CSV_TEMPLATES: dict[str, list[list[str]]] = {
+    "bank": [
+        ["date", "description", "reference", "amount"],
+        ["2025-07-01", "Opening balance", "", ""],
+        ["2025-07-02", "Payment to Vendor A", "REF-0001", "-1250.00"],
+        ["2025-07-03", "Payroll run July", "PAY-2207", "-8420.50"],
+        ["2025-07-05", "Sale invoice 1041", "INV-1041", "3600.00"],
+        ["2025-07-08", "Transfer to savings", "TRF-0112", "-2000.00"],
+        ["2025-07-10", "Refund from supplier", "REF-0002", "150.75"],
+    ],
+    "internal": [
+        ["date", "description", "reference", "amount"],
+        ["2025-07-01", "Opening balance", "", ""],
+        ["2025-07-02", "Vendor A invoice", "REF-0001", "-1250.00"],
+        ["2025-07-03", "Payroll - July", "PAY-2207", "-8420.50"],
+        ["2025-07-05", "Invoice 1041 issued", "INV-1041", "3600.00"],
+        ["2025-07-08", "Transfer to savings", "TRF-0112", "-2000.00"],
+        ["2025-07-11", "Supplier credit note", "REF-0002", "150.75"],
+    ],
+}
+
+
+@app.get("/templates/{source}")
+def download_template(source: str):
+    """Download a sample CSV that matches ReconAI's expected columns, ready to
+    fill in and upload (bank or internal)."""
+    if source not in CSV_TEMPLATES:
+        raise HTTPException(status_code=404, detail="template not found")
+    buf = io.StringIO()
+    csv.writer(buf).writerows(CSV_TEMPLATES[source])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="reconai-{source}-template.csv"'},
+    )
+
+
 # ─── Imports (PROTECTED) ───
 @app.post("/imports", response_model=ImportCreateOut, status_code=201)
 async def create_import(
@@ -484,6 +525,67 @@ def list_exceptions(
 
     records = q.order_by(ExceptionRecord.id.desc()).all()
     return [_exception_out(db, r) for r in records]
+
+
+@app.get("/exceptions/export")
+def export_exceptions(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Download every exception as a CSV audit trail (own data only)."""
+    records = (
+        db.query(ExceptionRecord)
+        .filter(ExceptionRecord.user_id == current.id)
+        .order_by(ExceptionRecord.id.desc())
+        .all()
+    )
+
+    def txn_row(t: ExceptionTransactionOut | None) -> list[str]:
+        if t is None:
+            return ["", "", "", ""]
+        return [
+            t.date.isoformat(),
+            t.description or "",
+            t.reference or "",
+            f"{t.amount:.2f}",
+        ]
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "id",
+        "type",
+        "reason",
+        "status",
+        "created_at",
+        "resolved_at",
+        "bank_date",
+        "bank_description",
+        "bank_reference",
+        "bank_amount",
+        "internal_date",
+        "internal_description",
+        "internal_reference",
+        "internal_amount",
+    ])
+    for rec in records:
+        out = _exception_out(db, rec)
+        writer.writerow([
+            rec.id,
+            rec.exception_type,
+            rec.reason,
+            rec.status,
+            rec.created_at.isoformat(),
+            rec.resolved_at.isoformat() if rec.resolved_at else "",
+            *txn_row(out.bank_txn),
+            *txn_row(out.internal_txn),
+        ])
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="reconai-exceptions.csv"'},
+    )
 
 
 @app.patch("/exceptions/{exception_id}", response_model=ExceptionOut)

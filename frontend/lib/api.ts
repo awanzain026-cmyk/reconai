@@ -125,6 +125,37 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Downloads a file from the API (blob -> browser download), so auth headers
+// work and the page never navigates away.
+async function downloadFile(url: string, filename: string) {
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set("Authorization", `Bearer ${token}`)
+
+  const res = await fetch(url, { headers })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const body = await res.json()
+      if (typeof body.detail === "string") detail = body.detail
+    } catch {
+      /* non-JSON error body */
+    }
+    if (res.status === 401) clearSession()
+    throw new ApiError(res.status, detail)
+  }
+
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = objectUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
 export const api = {
   async signup(email: string, password: string) {
     return request<AuthResponse>("/auth/signup", {
@@ -195,5 +226,13 @@ export const api = {
 
   async deleteAllData() {
     return request<ReconcileSummary>("/data", { method: "DELETE" })
+  },
+
+  async downloadTemplate(source: "bank" | "internal") {
+    await downloadFile(`${API_URL}/templates/${source}`, `reconai-${source}-template.csv`)
+  },
+
+  async exportExceptions() {
+    await downloadFile(`${API_URL}/exceptions/export`, "reconai-exceptions.csv")
   },
 }

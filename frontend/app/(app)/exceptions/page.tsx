@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { FileDown, Loader2 } from "lucide-react"
 import { AppTopbar } from "@/components/app/app-topbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,6 +13,7 @@ export default function ExceptionsPage() {
   const [items, setItems] = useState<Exception[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -27,6 +29,17 @@ export default function ExceptionsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  async function handleExport() {
+    setExporting(true)
+    try {
+      await api.exportExceptions()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not export exceptions.")
+    } finally {
+      setExporting(false)
+    }
+  }
 
   async function resolve(id: number, status: "open" | "resolved") {
     setItems((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e)))
@@ -59,6 +72,26 @@ export default function ExceptionsPage() {
       />
 
       <div className="flex-1 space-y-6 px-6 py-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {loading ? "Loading your review queue…" : `${items.length} exception${items.length === 1 ? "" : "s"} on file`}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 font-medium"
+            onClick={handleExport}
+            disabled={exporting || items.length === 0}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileDown className="h-4 w-4" aria-hidden="true" />
+            )}
+            Export CSV
+          </Button>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-3">
           <Card className="gap-1 p-5">
             <p className="text-sm font-medium text-muted-foreground">Open exceptions</p>
