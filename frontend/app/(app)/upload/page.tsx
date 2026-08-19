@@ -1,20 +1,35 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowRight, CheckCircle2, Loader2, Sparkles, TriangleAlert } from "lucide-react"
+import {
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react"
 import { AppTopbar } from "@/components/app/app-topbar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Dropzone } from "@/components/upload/dropzone"
 import { api, ApiError } from "@/lib/api"
-import type { ImportResult, ReconcileSummary } from "@/lib/api"
+import type { Import, ImportResult, ReconcileSummary } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 type RunResult = {
   bank: ImportResult
   internal: ImportResult
   summary: ReconcileSummary
 }
+
+const dateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+})
 
 export default function UploadPage() {
   const router = useRouter()
@@ -23,6 +38,26 @@ export default function UploadPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RunResult | null>(null)
+  const [imports, setImports] = useState<Import[]>([])
+  const [importsLoading, setImportsLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  const loadImports = useCallback(async () => {
+    try {
+      setImports(await api.getImports())
+      setHistoryError(null)
+    } catch (err) {
+      setHistoryError(err instanceof ApiError ? err.message : "Could not load upload history.")
+    } finally {
+      setImportsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadImports()
+  }, [loadImports])
 
   async function run() {
     if (!bankFile || !internalFile) {
@@ -37,10 +72,25 @@ export default function UploadPage() {
       const internal = await api.uploadCsv("internal", internalFile)
       const summary = await api.runReconcile()
       setResult({ bank, internal, summary })
+      void loadImports()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed. Please try again.")
     } finally {
       setRunning(false)
+    }
+  }
+
+  async function handleDelete(id: number) {
+    setDeletingId(id)
+    try {
+      await api.deleteImport(id)
+      setImports((prev) => prev.filter((i) => i.id !== id))
+      setResult(null)
+      setConfirmingDeleteId(null)
+    } catch (err) {
+      setHistoryError(err instanceof ApiError ? err.message : "Could not delete the upload.")
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -219,6 +269,101 @@ export default function UploadPage() {
             </div>
           </Card>
         ) : null}
+
+        <Card className="min-w-0 gap-4">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">Upload history</CardTitle>
+            <CardDescription>
+              Remove a mis-uploaded file — its transactions, matches and exceptions are deleted and
+              reconciliation re-runs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {historyError ? (
+              <p className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                {historyError}
+              </p>
+            ) : importsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Loading uploads…
+              </div>
+            ) : imports.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No uploads yet — files you import will appear here so you can remove mistakes.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {imports.map((imp) => (
+                  <li key={imp.id} className="flex items-center justify-between gap-4 py-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={imp.source === "bank" ? "outline" : "secondary"}
+                          className={cn(
+                            imp.source === "bank" ? "text-sky-600" : "text-violet-600",
+                          )}
+                        >
+                          {imp.source === "bank" ? "Bank" : "Internal"}
+                        </Badge>
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {imp.filename}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {imp.imported} imported
+                        {imp.rejected > 0 ? ` · ${imp.rejected} rejected` : ""} ·{" "}
+                        {dateFormatter.format(new Date(imp.created_at))}
+                      </p>
+                    </div>
+
+                    {confirmingDeleteId === imp.id ? (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-xs font-medium text-destructive">
+                          Delete this upload?
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={deletingId === imp.id}
+                          onClick={() => handleDelete(imp.id)}
+                        >
+                          {deletingId === imp.id ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                              Deleting…
+                            </>
+                          ) : (
+                            "Confirm"
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setConfirmingDeleteId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                        aria-label={`Delete ${imp.filename}`}
+                        title="Delete upload"
+                        onClick={() => setConfirmingDeleteId(imp.id)}
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -19,6 +19,15 @@ export type ImportResult = {
   rejections: { row: string; reason: string }[]
 }
 
+export type Import = {
+  id: number
+  source: "bank" | "internal"
+  filename: string
+  imported: number
+  rejected: number
+  created_at: string
+}
+
 export type ReconcileSummary = {
   bank_total: number
   internal_total: number
@@ -174,5 +183,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ match_transaction_id: matchTransactionId }),
     })
+  },
+
+  async getImports() {
+    return request<Import[]>("/imports")
+  },
+
+  async deleteImport(importId: number) {
+    return request<ReconcileSummary>(`/imports/${importId}`, { method: "DELETE" })
+  },
+
+  async deleteAllData() {
+    return request<ReconcileSummary>("/data", { method: "DELETE" })
   },
 }

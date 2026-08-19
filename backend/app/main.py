@@ -363,6 +363,71 @@ def list_import_transactions(
     )
 
 
+@app.delete("/imports/{import_id}", response_model=ReconcileOut)
+def delete_import(
+    import_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Delete one uploaded file and everything derived from it: its
+    transactions, any matches they participate in, and the exceptions they
+    produced. Reconciliation re-runs so the remaining data stays consistent
+    (e.g. a matched partner that lost its pair becomes an unmatched exception)."""
+    batch = db.get(Import, import_id)
+    if batch is None or batch.user_id != current.id:
+        raise HTTPException(status_code=404, detail="Import not found")
+
+    txn_ids = [
+        t.id
+        for t in db.query(Transaction)
+        .filter(Transaction.import_id == import_id)
+        .all()
+    ]
+    if txn_ids:
+        match_ids = [
+            m.id
+            for m in db.query(Match)
+            .filter(
+                Match.user_id == current.id,
+                (Match.bank_txn_id.in_(txn_ids)) | (Match.internal_txn_id.in_(txn_ids)),
+            )
+            .all()
+        ]
+        if match_ids:
+            db.query(ExceptionRecord).filter(
+                ExceptionRecord.user_id == current.id,
+                ExceptionRecord.match_id.in_(match_ids),
+            ).delete(synchronize_session=False)
+            db.query(Match).filter(Match.id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(ExceptionRecord).filter(
+            ExceptionRecord.user_id == current.id,
+            ExceptionRecord.transaction_id.in_(txn_ids),
+        ).delete(synchronize_session=False)
+        db.query(Transaction).filter(Transaction.id.in_(txn_ids)).delete(synchronize_session=False)
+
+    db.delete(batch)
+    db.commit()
+    return reconcile(db, current.id)
+
+
+@app.delete("/data", response_model=ReconcileOut)
+def delete_all_data(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Wipe ALL reconciliation data for the account — every import, transaction,
+    match and exception. The account itself (and its credentials) stays, so the
+    user can start fresh from the upload page."""
+    db.query(ExceptionRecord).filter(
+        ExceptionRecord.user_id == current.id
+    ).delete(synchronize_session=False)
+    db.query(Match).filter(Match.user_id == current.id).delete(synchronize_session=False)
+    db.query(Transaction).filter(Transaction.user_id == current.id).delete(synchronize_session=False)
+    db.query(Import).filter(Import.user_id == current.id).delete(synchronize_session=False)
+    db.commit()
+    return current_summary(db, current.id)
+
+
 # ─── Reconcile (PROTECTED) ───
 @app.post("/reconcile", response_model=ReconcileOut)
 def run_reconcile(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
