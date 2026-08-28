@@ -32,6 +32,61 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 })
 
+function PreviewTable({
+  title,
+  result,
+  color,
+}: {
+  title: string
+  result: ImportResult
+  color: "sky" | "violet"
+}) {
+  const badgeColor = color === "sky" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"
+  const rows = result.rejections.length > 0 ? result.rejections.slice(0, 10) : []
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badgeColor}`}>
+            {result.imported} imported
+          </span>
+          {result.rejected > 0 && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+              {result.rejected} rejected
+            </span>
+          )}
+        </div>
+      </div>
+
+      {rows.length > 0 ? (
+        <div className="rounded-lg border border-border bg-destructive/5 p-3">
+          <p className="text-xs font-medium text-destructive mb-2">
+            Rejected rows (first 10):
+          </p>
+          <ul className="space-y-1 text-xs text-muted-foreground max-h-48 overflow-y-auto">
+            {rows.map((r, i) => (
+              <li key={i} className="font-mono">
+                Row {r.row}: {r.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground mb-2">
+            First {Math.min(10, result.imported)} rows:
+          </p>
+          <p className="text-xs text-muted-foreground italic">
+            (Preview shows successful imports; rejected rows would appear above)
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function UploadPage() {
   const router = useRouter()
   const [bankFile, setBankFile] = useState<File | null>(null)
@@ -47,6 +102,10 @@ export default function UploadPage() {
   const [downloadingTemplate, setDownloadingTemplate] = useState<"bank" | "internal" | null>(
     null,
   )
+  const [preview, setPreview] = useState<{ bank: ImportResult; internal: ImportResult } | null>(
+    null,
+  )
+  const [previewing, setPreviewing] = useState(false)
 
   const loadImports = useCallback(async () => {
     try {
@@ -63,25 +122,50 @@ export default function UploadPage() {
     void loadImports()
   }, [loadImports])
 
-  async function run() {
+  async function handlePreview() {
     if (!bankFile || !internalFile) {
-      setError("Select both a bank statement and an internal ledger CSV before running.")
+      setError("Select both a bank statement and an internal ledger CSV first.")
+      return
+    }
+    setPreviewing(true)
+    setError(null)
+    setPreview(null)
+    try {
+      const [bank, internal] = await Promise.all([
+        api.uploadCsv("bank", bankFile),
+        api.uploadCsv("internal", internalFile),
+      ])
+      setPreview({ bank, internal })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Preview failed. Please check your files.")
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  async function run() {
+    if (!preview) {
+      setError("Preview the files first, then confirm to run reconciliation.")
       return
     }
     setRunning(true)
     setError(null)
     setResult(null)
     try {
-      const bank = await api.uploadCsv("bank", bankFile)
-      const internal = await api.uploadCsv("internal", internalFile)
       const summary = await api.runReconcile()
-      setResult({ bank, internal, summary })
+      setResult({ bank: preview.bank, internal: preview.internal, summary })
       void loadImports()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Upload failed. Please try again.")
+      setError(err instanceof ApiError ? err.message : "Reconciliation failed. Please try again.")
     } finally {
       setRunning(false)
     }
+  }
+
+  function clearPreview() {
+    setPreview(null)
+    setResult(null)
+    setError(null)
   }
 
   async function handleDelete(id: number) {
@@ -185,17 +269,17 @@ export default function UploadPage() {
                   ReconAI will auto-match transactions and flag exceptions for review
                 </p>
                 <Button
-                  onClick={run}
-                  disabled={!ready || running}
+                  onClick={handlePreview}
+                  disabled={!ready || previewing}
                   className="shrink-0 bg-accent font-medium text-accent-foreground hover:bg-accent/90"
                 >
-                  {running ? (
+                  {previewing ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      Reconciling…
+                      Previewing…
                     </>
                   ) : (
-                    "Run reconciliation"
+                    "Preview parsed data"
                   )}
                 </Button>
               </div>
@@ -228,6 +312,56 @@ export default function UploadPage() {
               </ul>
             </CardContent>
           </Card>
+
+          {preview && (
+            <Card className="min-w-0 gap-4">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                  <Sparkles className="h-5 w-5 text-accent" aria-hidden="true" />
+                  Preview parsed data
+                </CardTitle>
+                <CardDescription>
+                  Verify the first 10 rows of each file. Check dates, amounts, and references look correct
+                  before running reconciliation.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <PreviewTable
+                    title="Bank statement"
+                    result={preview.bank}
+                    color="sky"
+                  />
+                  <PreviewTable
+                    title="Internal records"
+                    result={preview.internal}
+                    color="violet"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border">
+                  <Button variant="outline" size="sm" onClick={clearPreview}>
+                    <ArrowRight className="h-4 w-4 mr-1" aria-hidden="true" />
+                    Change files
+                  </Button>
+                  <Button
+                    onClick={run}
+                    disabled={running}
+                    className="bg-accent font-medium text-accent-foreground hover:bg-accent/90"
+                  >
+                    {running ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Reconciling…
+                      </>
+                    ) : (
+                      "Confirm & Run reconciliation"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {result ? (
