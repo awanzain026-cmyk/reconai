@@ -17,10 +17,10 @@ from datetime import datetime
 
 DATE_FORMATS = [
     "%Y-%m-%d",
-    "%m/%d/%Y",
-    "%m-%d-%Y",
     "%d/%m/%Y",
+    "%m/%d/%Y",
     "%d-%m-%Y",
+    "%m-%d-%Y",
     "%d-%b-%Y",
     "%Y/%m/%d",
     "%b %d, %Y",
