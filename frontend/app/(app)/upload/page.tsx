@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dropzone } from "@/components/upload/dropzone"
-import { api, ApiError } from "@/lib/api"
+import { api, ApiError, getErrorMessage } from "@/lib/api"
 import type { Import, ImportResult, ReconcileSummary } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -112,7 +112,7 @@ export default function UploadPage() {
       setImports(await api.getImports())
       setHistoryError(null)
     } catch (err) {
-      setHistoryError(err instanceof ApiError ? err.message : "Could not load upload history.")
+      setHistoryError(getErrorMessage(err))
     } finally {
       setImportsLoading(false)
     }
@@ -137,7 +137,7 @@ export default function UploadPage() {
       ])
       setPreview({ bank, internal })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Preview failed. Please check your files.")
+      setError(getErrorMessage(err))
     } finally {
       setPreviewing(false)
     }
@@ -156,7 +156,7 @@ export default function UploadPage() {
       setResult({ bank: preview.bank, internal: preview.internal, summary })
       void loadImports()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Reconciliation failed. Please try again.")
+      setError(getErrorMessage(err))
     } finally {
       setRunning(false)
     }
@@ -176,7 +176,7 @@ export default function UploadPage() {
       setResult(null)
       setConfirmingDeleteId(null)
     } catch (err) {
-      setHistoryError(err instanceof ApiError ? err.message : "Could not delete the upload.")
+      setHistoryError(getErrorMessage(err))
     } finally {
       setDeletingId(null)
     }
@@ -187,7 +187,7 @@ export default function UploadPage() {
     try {
       await api.downloadTemplate(source)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not download the template.")
+      setError(getErrorMessage(err))
     } finally {
       setDownloadingTemplate(null)
     }

@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { api, setSession } from "@/lib/api"
+import { api, setSession, getErrorMessage } from "@/lib/api"
 
 type DemoButtonProps = {
   className?: string
@@ -15,28 +15,35 @@ type DemoButtonProps = {
 export function DemoButton({ className, size, variant, children }: DemoButtonProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function startDemo() {
     setLoading(true)
+    setError(null)
     try {
       const res = await api.demoLogin()
       setSession(res.access_token, res.email)
       router.push("/dashboard")
-    } catch {
+    } catch (err) {
       setLoading(false)
-      router.push("/login?mode=signup")
+      setError(getErrorMessage(err))
     }
   }
 
   return (
-    <Button
-      variant={variant}
-      size={size}
-      className={className}
-      disabled={loading}
-      onClick={() => void startDemo()}
-    >
-      {loading ? "Loading demo…" : (children ?? "View live demo")}
-    </Button>
+    <div className="inline-flex flex-col items-start gap-2">
+      <Button
+        variant={variant}
+        size={size}
+        className={className}
+        disabled={loading}
+        onClick={() => void startDemo()}
+      >
+        {loading ? "Loading demo…" : (children ?? "View live demo")}
+      </Button>
+      {error ? (
+        <p className="max-w-xs text-xs text-muted-foreground">{error}</p>
+      ) : null}
+    </div>
   )
 }

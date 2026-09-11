@@ -1,6 +1,8 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
 const TOKEN_KEY = "reconai_token"
 const USER_KEY = "reconai_user"
+const REQUEST_TIMEOUT_MS = 15_000
+const MAX_RETRIES = 1
 
 export type AuthResponse = {
   access_token: string
@@ -80,6 +82,20 @@ export class ApiError extends Error {
   }
 }
 
+export class NetworkError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "NetworkError"
+  }
+}
+
+export function getErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) return err.message
+  if (err instanceof NetworkError) return err.message
+  if (err instanceof DOMException && err.name === "AbortError") return "Request timed out. The server may be starting up — try again in a moment."
+  return "Something went wrong. Please try again."
+}
+
 // ─── Session (localStorage) ───
 export function getToken(): string | null {
   if (typeof window === "undefined") return null
@@ -101,7 +117,7 @@ export function clearSession() {
   window.localStorage.removeItem(USER_KEY)
 }
 
-// ─── Fetch helper ───
+// ─── Fetch helper with timeout + retry ───
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const token = getToken()
@@ -110,19 +126,48 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set("Content-Type", "application/json")
   }
 
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers })
-  if (!res.ok) {
-    let detail = res.statusText
+  let lastError: unknown
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
     try {
-      const body = await res.json()
-      if (typeof body.detail === "string") detail = body.detail
-    } catch {
-      /* non-JSON error body */
+      const res = await fetch(`${API_URL}${path}`, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+
+      if (!res.ok) {
+        let detail = res.statusText
+        try {
+          const body = await res.json()
+          if (typeof body.detail === "string") detail = body.detail
+        } catch {
+          /* non-JSON error body */
+        }
+        if (res.status === 401) clearSession()
+        throw new ApiError(res.status, detail)
+      }
+      return res.json() as Promise<T>
+    } catch (err) {
+      clearTimeout(timer)
+      lastError = err
+
+      if (err instanceof ApiError) throw err
+      if (err instanceof DOMException && err.name === "AbortError") {
+        if (attempt < MAX_RETRIES) continue
+        throw new NetworkError("Server is not responding. It may be starting up — please try again in a moment.")
+      }
+      if (err instanceof TypeError) {
+        if (attempt < MAX_RETRIES) continue
+        throw new NetworkError("Cannot reach the server. Please check your connection and try again.")
+      }
+      throw err
     }
-    if (res.status === 401) clearSession()
-    throw new ApiError(res.status, detail)
   }
-  return res.json() as Promise<T>
+  throw lastError
 }
 
 // Downloads a file from the API (blob -> browser download), so auth headers
@@ -132,28 +177,45 @@ async function downloadFile(url: string, filename: string) {
   const token = getToken()
   if (token) headers.set("Authorization", `Bearer ${token}`)
 
-  const res = await fetch(url, { headers })
-  if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const body = await res.json()
-      if (typeof body.detail === "string") detail = body.detail
-    } catch {
-      /* non-JSON error body */
-    }
-    if (res.status === 401) clearSession()
-    throw new ApiError(res.status, detail)
-  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
-  const blob = await res.blob()
-  const objectUrl = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = objectUrl
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(objectUrl)
+  try {
+    const res = await fetch(url, { headers, signal: controller.signal })
+    clearTimeout(timer)
+
+    if (!res.ok) {
+      let detail = res.statusText
+      try {
+        const body = await res.json()
+        if (typeof body.detail === "string") detail = body.detail
+      } catch {
+        /* non-JSON error body */
+      }
+      if (res.status === 401) clearSession()
+      throw new ApiError(res.status, detail)
+    }
+
+    const blob = await res.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = objectUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(objectUrl)
+  } catch (err) {
+    clearTimeout(timer)
+    if (err instanceof ApiError) throw err
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new NetworkError("Download timed out. The server may be starting up — please try again.")
+    }
+    if (err instanceof TypeError) {
+      throw new NetworkError("Cannot reach the server to download the file.")
+    }
+    throw err
+  }
 }
 
 export const api = {

@@ -13,12 +13,19 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./recon.db")
 
-# SQLite + FastAPI can serve requests from different threads -> allow same-thread=false.
-# Postgres does not need this, hence the condition.
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-)
+is_sqlite = DATABASE_URL.startswith("sqlite")
+
+engine_kwargs = {
+    "pool_pre_ping": True,
+}
+
+if is_sqlite:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    engine_kwargs["pool_timeout"] = 10
+    engine_kwargs["connect_args"] = {"connect_timeout": 10}
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 

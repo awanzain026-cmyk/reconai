@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { StatCards } from "@/components/dashboard/stat-cards"
 import { ExceptionsPanel } from "@/components/exceptions/exceptions-panel"
-import { api, ApiError } from "@/lib/api"
+import { api, ApiError, getErrorMessage } from "@/lib/api"
 import type { Exception, ReconcileSummary } from "@/lib/api"
 
 export default function DashboardPage() {
@@ -24,7 +24,7 @@ export default function DashboardPage() {
       setExceptions(open)
       setError(null)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load your dashboard.")
+      setError(getErrorMessage(err))
     } finally {
       setLoading(false)
     }

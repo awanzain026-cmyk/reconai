@@ -21,7 +21,12 @@ from app.matcher import create_manual_match, current_summary, reconcile, suggest
 from app.models import ExceptionRecord, Import, Match, Transaction, User, _utcnow
 
 # Create tables if they don't exist (idempotent). In production we'd use migrations.
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception:
+    # If DB is unreachable on cold start (e.g. sleeping Postgres), the first
+    # request will retry via pool_pre_ping.  Don't crash the process.
+    pass
 
 app = FastAPI(title="ReconAI API")
 

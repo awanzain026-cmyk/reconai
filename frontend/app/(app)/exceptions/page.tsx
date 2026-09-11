@@ -6,7 +6,7 @@ import { AppTopbar } from "@/components/app/app-topbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ExceptionsPanel } from "@/components/exceptions/exceptions-panel"
-import { api, ApiError } from "@/lib/api"
+import { api, ApiError, getErrorMessage } from "@/lib/api"
 import type { Exception } from "@/lib/api"
 
 export default function ExceptionsPage() {
@@ -20,7 +20,7 @@ export default function ExceptionsPage() {
       setItems(await api.getExceptions())
       setError(null)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load exceptions.")
+      setError(getErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -35,7 +35,7 @@ export default function ExceptionsPage() {
     try {
       await api.exportExceptions()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not export exceptions.")
+      setError(getErrorMessage(err))
     } finally {
       setExporting(false)
     }

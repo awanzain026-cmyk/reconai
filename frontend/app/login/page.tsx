@@ -3,13 +3,14 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { Loader2, RefreshCw } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { api, ApiError, setSession } from "@/lib/api"
+import { api, getErrorMessage, setSession } from "@/lib/api"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -18,11 +19,29 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [serverDown, setServerDown] = useState(false)
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("mode") === "signup") {
       setMode("signup")
     }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    async function check() {
+      try {
+        await api.getSummary()
+        if (alive) setServerDown(false)
+      } catch {
+        if (alive) setServerDown(true)
+      } finally {
+        if (alive) setChecking(false)
+      }
+    }
+    void check()
+    return () => { alive = false }
   }, [])
 
   async function submit(event: FormEvent) {
@@ -35,7 +54,7 @@ export default function LoginPage() {
       setSession(res.access_token, res.email)
       router.replace("/dashboard")
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.")
+      setError(getErrorMessage(err))
       setLoading(false)
     }
   }
@@ -58,6 +77,44 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          {checking ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg bg-secondary/60 px-3 py-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Connecting to server…
+            </div>
+          ) : serverDown ? (
+            <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm dark:border-amber-800 dark:bg-amber-950">
+              <p className="font-medium text-amber-800 dark:text-amber-200">
+                Server is not responding
+              </p>
+              <p className="text-amber-700 dark:text-amber-300">
+                The backend may be starting up. Try again in a moment.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full font-medium"
+                onClick={() => {
+                  setChecking(true)
+                  setServerDown(false)
+                  void (async () => {
+                    try {
+                      await api.getSummary()
+                      setServerDown(false)
+                    } catch {
+                      setServerDown(true)
+                    } finally {
+                      setChecking(false)
+                    }
+                  })()
+                }}
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                Check again
+              </Button>
+            </div>
+          ) : null}
+
           <Tabs value={mode} onValueChange={(v) => setMode(v as "login" | "signup")}>
             <TabsList className="w-full">
               <TabsTrigger value="login" className="flex-1">
@@ -104,7 +161,7 @@ export default function LoginPage() {
 
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || serverDown}
               className="w-full bg-accent font-medium text-accent-foreground hover:bg-accent/90"
             >
               {loading ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}

@@ -6,7 +6,7 @@ import { Loader2, TriangleAlert } from "lucide-react"
 import { AppTopbar } from "@/components/app/app-topbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { api, ApiError, clearSession, getEmail } from "@/lib/api"
+import { api, ApiError, getErrorMessage, clearSession, getEmail } from "@/lib/api"
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -27,7 +27,7 @@ export default function SettingsPage() {
       await api.deleteAllData()
       router.replace("/dashboard")
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not delete data. Please try again.")
+      setError(getErrorMessage(err))
       setDeleting(false)
       setConfirming(false)
     }
