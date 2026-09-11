@@ -21,12 +21,18 @@ from app.matcher import create_manual_match, current_summary, reconcile, suggest
 from app.models import ExceptionRecord, Import, Match, Transaction, User, _utcnow
 
 # Create tables if they don't exist (idempotent). In production we'd use migrations.
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception:
-    # If DB is unreachable on cold start (e.g. sleeping Postgres), the first
-    # request will retry via pool_pre_ping.  Don't crash the process.
-    pass
+# Run in a background thread with a timeout so a sleeping Postgres doesn't block startup.
+import threading
+
+def _create_tables():
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass
+
+_t = threading.Thread(target=_create_tables, daemon=True)
+_t.start()
+_t.join(timeout=8)  # don't block startup for more than 8 seconds
 
 app = FastAPI(title="ReconAI API")
 
