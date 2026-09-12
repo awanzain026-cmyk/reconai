@@ -149,7 +149,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         }
         if (res.status === 401) {
           clearSession()
-          if (typeof window !== "undefined") {
+          if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
             window.location.href = "/login"
           }
         }
@@ -199,7 +199,7 @@ async function downloadFile(url: string, filename: string) {
       }
       if (res.status === 401) {
         clearSession()
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
           window.location.href = "/login"
         }
       }
