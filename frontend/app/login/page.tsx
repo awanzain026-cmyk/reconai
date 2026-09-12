@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { api, getErrorMessage, setSession } from "@/lib/api"
+import { api, ApiError, getErrorMessage, setSession } from "@/lib/api"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -34,8 +34,12 @@ export default function LoginPage() {
       try {
         await api.getSummary()
         if (alive) setServerDown(false)
-      } catch {
-        if (alive) setServerDown(true)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          if (alive) setServerDown(false)
+        } else {
+          if (alive) setServerDown(true)
+        }
       } finally {
         if (alive) setChecking(false)
       }
@@ -101,8 +105,12 @@ export default function LoginPage() {
                     try {
                       await api.getSummary()
                       setServerDown(false)
-                    } catch {
-                      setServerDown(true)
+                    } catch (err) {
+                      if (err instanceof ApiError && err.status === 401) {
+                        setServerDown(false)
+                      } else {
+                        setServerDown(true)
+                      }
                     } finally {
                       setChecking(false)
                     }
