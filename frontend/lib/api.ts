@@ -147,7 +147,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         } catch {
           /* non-JSON error body */
         }
-        if (res.status === 401) clearSession()
+        if (res.status === 401) {
+          clearSession()
+          if (typeof window !== "undefined") {
+            window.location.href = "/login"
+          }
+        }
         throw new ApiError(res.status, detail)
       }
       return res.json() as Promise<T>
@@ -192,7 +197,12 @@ async function downloadFile(url: string, filename: string) {
       } catch {
         /* non-JSON error body */
       }
-      if (res.status === 401) clearSession()
+      if (res.status === 401) {
+        clearSession()
+        if (typeof window !== "undefined") {
+          window.location.href = "/login"
+        }
+      }
       throw new ApiError(res.status, detail)
     }
 
