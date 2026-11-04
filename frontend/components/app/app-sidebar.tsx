@@ -3,35 +3,53 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, UploadCloud, TriangleAlert, Settings } from "lucide-react"
+import {
+  Building2,
+  History,
+  LayoutDashboard,
+  Settings,
+  TriangleAlert,
+  UploadCloud,
+} from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+import { useClients } from "@/lib/use-clients"
+import { WORKSPACE_CHANGED_EVENT } from "@/lib/workspace-events"
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Clients", href: "/clients", icon: Building2 },
   { label: "Upload", href: "/upload", icon: UploadCloud },
   { label: "Exceptions", href: "/exceptions", icon: TriangleAlert },
+  { label: "History", href: "/history", icon: History },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const { activeId } = useClients()
   const [openExceptions, setOpenExceptions] = useState(0)
 
   useEffect(() => {
+    if (activeId === null) return
     let cancelled = false
-    api
-      .getExceptions("open")
-      .then((items) => {
-        if (!cancelled) setOpenExceptions(items.length)
-      })
-      .catch(() => {
-        /* badge is decorative; ignore errors */
-      })
+    const refresh = () => {
+      api
+        .getExceptions("open", undefined, activeId)
+        .then((items) => {
+          if (!cancelled) setOpenExceptions(items.length)
+        })
+        .catch(() => {
+          /* badge is decorative; ignore errors */
+        })
+    }
+    refresh()
+    window.addEventListener(WORKSPACE_CHANGED_EVENT, refresh)
     return () => {
       cancelled = true
+      window.removeEventListener(WORKSPACE_CHANGED_EVENT, refresh)
     }
-  }, [pathname])
+  }, [pathname, activeId])
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">

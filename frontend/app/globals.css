@@ -95,3 +95,22 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Workpaper printing: hide the app chrome and print a clean sheet. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .workpaper-sheet {
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+}
+

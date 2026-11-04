@@ -2,7 +2,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
 const TOKEN_KEY = "reconai_token"
 const USER_KEY = "reconai_user"
 const REQUEST_TIMEOUT_MS = 15_000
-const MAX_RETRIES = 1
+const MAX_RETRIES = 2
+const RETRY_DELAY_MS = 900
 
 export type AuthResponse = {
   access_token: string
@@ -11,8 +12,23 @@ export type AuthResponse = {
   email: string
 }
 
+export type Client = {
+  id: number
+  name: string
+  code: string | null
+  currency: string
+  created_at: string
+  bank_total: number
+  internal_total: number
+  matched: number
+  open_exceptions: number
+  amount_at_risk: number
+  last_run_at: string | null
+}
+
 export type ImportResult = {
   import_id: number
+  client_id: number | null
   source: "bank" | "internal"
   filename: string
   imported: number
@@ -23,11 +39,21 @@ export type ImportResult = {
 
 export type Import = {
   id: number
+  client_id: number | null
   source: "bank" | "internal"
   filename: string
   imported: number
   rejected: number
   created_at: string
+}
+
+export type TransactionRow = {
+  id: number
+  source: "bank" | "internal"
+  date: string
+  amount: number
+  reference: string | null
+  description: string | null
 }
 
 export type ReconcileSummary = {
@@ -39,6 +65,12 @@ export type ReconcileSummary = {
   unmatched_internal: number
   amount_mismatches: number
   open_exceptions: number
+  amount_at_risk: number
+  client_id: number | null
+  client_name: string | null
+  last_run_at: string | null
+  period_start: string | null
+  period_end: string | null
 }
 
 export type ExceptionTxn = {
@@ -72,6 +104,34 @@ export type Suggestion = {
   reasons: string[]
 }
 
+export type Run = {
+  id: number
+  client_id: number
+  client_name: string | null
+  run_at: string
+  bank_total: number
+  internal_total: number
+  matched: number
+  unmatched_bank: number
+  unmatched_internal: number
+  amount_mismatches: number
+  open_exceptions: number
+  amount_at_risk: number
+  match_rate: number
+  method_counts: Record<string, number>
+  triggered_by: string
+}
+
+export type AuditEvent = {
+  id: number
+  client_id: number | null
+  client_name: string | null
+  event_type: string
+  message: string
+  actor: string
+  created_at: string
+}
+
 export class ApiError extends Error {
   status: number
 
@@ -92,7 +152,9 @@ export class NetworkError extends Error {
 export function getErrorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message
   if (err instanceof NetworkError) return err.message
-  if (err instanceof DOMException && err.name === "AbortError") return "Request timed out. The server may be starting up — try again in a moment."
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return "The server is taking longer than usual to wake up. Please try again in a moment."
+  }
   return "Something went wrong. Please try again."
 }
 
@@ -117,7 +179,17 @@ export function clearSession() {
   window.localStorage.removeItem(USER_KEY)
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function withClient(path: string, clientId?: number | null): string {
+  if (clientId === undefined || clientId === null) return path
+  return `${path}${path.includes("?") ? "&" : "?"}client_id=${clientId}`
+}
+
 // ─── Fetch helper with timeout + retry ───
+// The backend sleeps when idle (FastAPI Cloud / serverless), so a first request
+// can fail while the container boots. Retry a couple of times with a short
+// delay and show a "waking up" message instead of a raw "Failed to fetch".
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const token = getToken()
@@ -161,13 +233,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       lastError = err
 
       if (err instanceof ApiError) throw err
+
+      const retryable =
+        (err instanceof DOMException && err.name === "AbortError") ||
+        err instanceof TypeError
+      if (retryable && attempt < MAX_RETRIES) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1))
+        continue
+      }
       if (err instanceof DOMException && err.name === "AbortError") {
-        if (attempt < MAX_RETRIES) continue
-        throw new NetworkError("Server is not responding. It may be starting up — please try again in a moment.")
+        throw new NetworkError(
+          "The server is still starting up. Please wait a moment and try again.",
+        )
       }
       if (err instanceof TypeError) {
-        if (attempt < MAX_RETRIES) continue
-        throw new NetworkError("Cannot reach the server. Please check your connection and try again.")
+        throw new NetworkError(
+          "Can't reach the server right now. It may be waking up — please try again.",
+        )
       }
       throw err
     }
@@ -229,6 +311,12 @@ async function downloadFile(url: string, filename: string) {
 }
 
 export const api = {
+  /** Public liveness probe — no auth, so the login page can check the server
+   *  without provoking a 401 in the console. */
+  async health() {
+    return request<{ app: string; docs: string }>("/")
+  },
+
   async signup(email: string, password: string) {
     return request<AuthResponse>("/auth/signup", {
       method: "POST",
@@ -247,25 +335,89 @@ export const api = {
     return request<AuthResponse>("/auth/demo", { method: "POST" })
   },
 
-  async uploadCsv(source: "bank" | "internal", file: File) {
+  // ─── Clients ───
+  async getClients() {
+    return request<Client[]>("/clients")
+  },
+
+  async createClient(input: { name: string; code?: string; currency?: string }) {
+    return request<Client>("/clients", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
+  },
+
+  async updateClient(id: number, input: { name?: string; code?: string; currency?: string }) {
+    return request<Client>(`/clients/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    })
+  },
+
+  async deleteClient(id: number) {
+    return request<{ ok: boolean; deleted_client_id: number }>(`/clients/${id}`, {
+      method: "DELETE",
+    })
+  },
+
+  // ─── Imports ───
+  async uploadCsv(source: "bank" | "internal", file: File, clientId?: number | null) {
     const form = new FormData()
     form.append("source", source)
     form.append("file", file)
+    if (clientId !== undefined && clientId !== null) {
+      form.append("client_id", String(clientId))
+    }
     return request<ImportResult>("/imports", { method: "POST", body: form })
   },
 
-  async runReconcile() {
-    return request<ReconcileSummary>("/reconcile", { method: "POST" })
+  async getImports(clientId?: number | null) {
+    return request<Import[]>(withClient("/imports", clientId))
   },
 
-  async getSummary() {
-    return request<ReconcileSummary>("/reconcile")
+  async getImportTransactions(importId: number) {
+    return request<TransactionRow[]>(`/imports/${importId}/transactions`)
   },
 
-  async getExceptions(status?: "open" | "resolved", type?: "unmatched" | "mismatch") {
+  async deleteImport(importId: number) {
+    return request<ReconcileSummary>(`/imports/${importId}`, { method: "DELETE" })
+  },
+
+  // ─── Reconciliation ───
+  async runReconcile(clientId?: number | null) {
+    return request<ReconcileSummary>(withClient("/reconcile", clientId), { method: "POST" })
+  },
+
+  async getSummary(clientId?: number | null) {
+    return request<ReconcileSummary>(withClient("/reconcile", clientId))
+  },
+
+  async getRuns(clientId?: number | null, limit = 50) {
+    const qs = `limit=${limit}`
+    const path = clientId !== undefined && clientId !== null
+      ? `/runs?client_id=${clientId}&${qs}`
+      : `/runs?${qs}`
+    return request<Run[]>(path)
+  },
+
+  async getAudit(clientId?: number | null, limit = 100) {
+    const qs = `limit=${limit}`
+    const path = clientId !== undefined && clientId !== null
+      ? `/audit?client_id=${clientId}&${qs}`
+      : `/audit?${qs}`
+    return request<AuditEvent[]>(path)
+  },
+
+  // ─── Exceptions ───
+  async getExceptions(
+    status?: "open" | "resolved",
+    type?: "unmatched" | "mismatch",
+    clientId?: number | null,
+  ) {
     const params = new URLSearchParams()
     if (status) params.set("status", status)
     if (type) params.set("type", type)
+    if (clientId !== undefined && clientId !== null) params.set("client_id", String(clientId))
     const qs = params.toString()
     return request<Exception[]>(`/exceptions${qs ? `?${qs}` : ""}`)
   },
@@ -288,23 +440,23 @@ export const api = {
     })
   },
 
-  async getImports() {
-    return request<Import[]>("/imports")
+  // ─── Data management ───
+  async deleteAllData(clientId?: number | null) {
+    return request<ReconcileSummary>(withClient("/data", clientId), { method: "DELETE" })
   },
 
-  async deleteImport(importId: number) {
-    return request<ReconcileSummary>(`/imports/${importId}`, { method: "DELETE" })
-  },
-
-  async deleteAllData() {
-    return request<ReconcileSummary>("/data", { method: "DELETE" })
+  async resetDemoData() {
+    return request<Client[]>("/demo/reset", { method: "POST" })
   },
 
   async downloadTemplate(source: "bank" | "internal") {
     await downloadFile(`${API_URL}/templates/${source}`, `reconai-${source}-template.csv`)
   },
 
-  async exportExceptions() {
-    await downloadFile(`${API_URL}/exceptions/export`, "reconai-exceptions.csv")
+  async exportExceptions(clientId?: number | null) {
+    const path = clientId !== undefined && clientId !== null
+      ? `/exceptions/export?client_id=${clientId}`
+      : "/exceptions/export"
+    await downloadFile(`${API_URL}${path}`, "reconai-exceptions.csv")
   },
 }

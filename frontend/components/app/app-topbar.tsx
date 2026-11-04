@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Bell, LogOut } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { ClientSwitcher } from "@/components/app/client-switcher"
 import { clearSession, getEmail } from "@/lib/api"
 
 export function AppTopbar({
@@ -30,7 +31,8 @@ export function AppTopbar({
         <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
         {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <ClientSwitcher />
         {actions}
         <Button variant="outline" size="icon" aria-label="Notifications">
           <Bell className="h-4 w-4" aria-hidden="true" />

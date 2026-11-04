@@ -1,49 +1,53 @@
-import { CircleCheck, Landmark, ReceiptText, TriangleAlert } from "lucide-react"
+import { Clock, ShieldAlert, Target, TriangleAlert } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import type { ReconcileSummary } from "@/lib/api"
+import { currency, formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export function StatCards({ summary }: { summary: ReconcileSummary }) {
   const matchRate =
     summary.bank_total > 0 ? Math.round((summary.matched / summary.bank_total) * 100) : 0
+  const byReference = summary.method_counts.reference ?? 0
+  const byAmountDate = summary.method_counts.amount_date ?? 0
+  const byHand = summary.method_counts.manual ?? 0
 
   const stats: {
     label: string
     value: string
-    icon: typeof CircleCheck
-    tone: "positive" | "warning" | "neutral"
+    icon: typeof Target
+    tone: "positive" | "warning" | "danger" | "neutral"
     note: string
   }[] = [
     {
-      label: "Transactions matched",
-      value: summary.matched.toLocaleString(),
-      icon: CircleCheck,
-      tone: "positive",
-      note: `${matchRate}% of the bank list · ${summary.method_counts.reference ?? 0} by reference, ${summary.method_counts.amount_date ?? 0} by amount+date${(summary.method_counts.manual ?? 0) > 0 ? `, ${summary.method_counts.manual} by hand` : ""}`,
+      label: "Match rate",
+      value: `${matchRate}%`,
+      icon: Target,
+      tone: matchRate >= 95 ? "positive" : matchRate >= 80 ? "warning" : "danger",
+      note: `${summary.matched} of ${summary.bank_total} bank transactions · ${byReference} by reference, ${byAmountDate} by amount+date${byHand > 0 ? `, ${byHand} by hand` : ""}`,
     },
     {
-      label: "Bank unmatched",
-      value: summary.unmatched_bank.toLocaleString(),
-      icon: Landmark,
-      tone: summary.unmatched_bank > 0 ? "warning" : "neutral",
-      note: `of ${summary.bank_total.toLocaleString()} bank transactions`,
-    },
-    {
-      label: "Internal unmatched",
-      value: summary.unmatched_internal.toLocaleString(),
-      icon: ReceiptText,
-      tone: summary.unmatched_internal > 0 ? "warning" : "neutral",
-      note: `of ${summary.internal_total.toLocaleString()} internal transactions`,
+      label: "Amount at risk",
+      value: currency.format(summary.amount_at_risk),
+      icon: ShieldAlert,
+      tone: summary.amount_at_risk > 0 ? "danger" : "positive",
+      note:
+        summary.amount_at_risk > 0
+          ? `${summary.open_exceptions} open item${summary.open_exceptions === 1 ? "" : "s"} need a human decision`
+          : "Nothing unresolved — books tie",
     },
     {
       label: "Open exceptions",
       value: summary.open_exceptions.toLocaleString(),
       icon: TriangleAlert,
-      tone: summary.open_exceptions > 0 ? "warning" : "neutral",
-      note:
-        summary.amount_mismatches > 0
-          ? `${summary.amount_mismatches} with an amount mismatch`
-          : "Nothing flagged for review",
+      tone: summary.open_exceptions > 0 ? "warning" : "positive",
+      note: `${summary.unmatched_bank} bank · ${summary.unmatched_internal} internal unmatched${summary.amount_mismatches > 0 ? ` · ${summary.amount_mismatches} amount mismatch${summary.amount_mismatches === 1 ? "" : "es"}` : ""}`,
+    },
+    {
+      label: "Last reconciled",
+      value: summary.last_run_at ? formatDateTime(summary.last_run_at) : "Not yet",
+      icon: Clock,
+      tone: "neutral",
+      note: summary.client_name ? `Client: ${summary.client_name}` : "Run a reconciliation to start the trail",
     },
   ]
 
@@ -62,9 +66,10 @@ export function StatCards({ summary }: { summary: ReconcileSummary }) {
           </p>
           <p
             className={cn(
-              "mt-1.5 flex items-center gap-1 text-xs font-medium",
+              "mt-1.5 flex items-start gap-1 text-xs font-medium",
               stat.tone === "positive" && "text-success",
               stat.tone === "warning" && "text-amber-600",
+              stat.tone === "danger" && "text-destructive",
               stat.tone === "neutral" && "text-muted-foreground",
             )}
           >

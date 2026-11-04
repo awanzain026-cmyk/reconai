@@ -2,14 +2,23 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, UploadCloud, TriangleAlert, Settings } from "lucide-react"
+import {
+  Building2,
+  History,
+  LayoutDashboard,
+  Settings,
+  TriangleAlert,
+  UploadCloud,
+} from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Clients", href: "/clients", icon: Building2 },
   { label: "Upload", href: "/upload", icon: UploadCloud },
   { label: "Exceptions", href: "/exceptions", icon: TriangleAlert },
+  { label: "History", href: "/history", icon: History },
   { label: "Settings", href: "/settings", icon: Settings },
 ]
 

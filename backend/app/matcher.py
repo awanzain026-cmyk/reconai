@@ -14,7 +14,7 @@ rules, not ML. The plan:
 4. Mismatch detection: a pair found by reference whose amounts differ is still
    a pair (same transaction, wrong value somewhere) but flagged `amount_mismatch`.
 
-Reconcile is idempotent for the auto engine: it clears the user's auto matches
+Reconcile is idempotent for the auto engine: it clears the client's auto matches
 and recomputes from the current transactions. MANUAL matches (made by an
 accountant from a suggestion) are preserved across re-runs — a human decision is
 never silently undone. The UNIQUE constraints on `matches` make it impossible to
@@ -24,6 +24,10 @@ Stage 5: reconcile ALSO derives exceptions from the fresh matches — every
 transaction left out of a match is `unmatched`, and every reference pair whose
 amounts differ is `mismatch`. Only OPEN exceptions are refreshed; RESOLVED ones
 are a human decision and are left untouched (resolved is never a hard delete).
+
+Stage 6: everything is scoped to a `client_id`, so one firm can reconcile many
+entities without their data ever touching. `amount_at_risk` is the money value
+of the open exceptions — the single number a CFO cares about.
 
 Stage 8: for any open `unmatched` exception, `suggest_matches()` ranks the
 opposite-list transactions it *could* be (amount / date / description signals)
@@ -49,6 +53,7 @@ class MatchResult:
     unmatched_internal: int = 0
     amount_mismatches: int = 0
     open_exceptions: int = 0
+    amount_at_risk: float = 0.0
 
 
 def _to_cents(amount: float) -> int:
@@ -64,15 +69,54 @@ def _norm_ref(reference: str | None) -> str | None:
     return ref or None
 
 
-def reconcile(db: Session, user_id: int) -> MatchResult:
+def amount_at_risk(db: Session, user_id: int, client_id: int) -> float:
+    """The money value of every OPEN exception for a client.
+
+    Unmatched item -> the full absolute amount is unresolved.
+    Amount mismatch -> only the difference is unresolved.
+    """
+    total = 0.0
+    records = (
+        db.query(ExceptionRecord)
+        .filter(
+            ExceptionRecord.user_id == user_id,
+            ExceptionRecord.client_id == client_id,
+            ExceptionRecord.status == "open",
+        )
+        .all()
+    )
+    for rec in records:
+        if rec.match_id is not None:
+            match = db.get(Match, rec.match_id)
+            if match is not None:
+                bank = db.get(Transaction, match.bank_txn_id)
+                internal = db.get(Transaction, match.internal_txn_id)
+                if bank is not None and internal is not None:
+                    total += abs(bank.amount - internal.amount)
+                    continue
+        txn = db.get(Transaction, rec.transaction_id)
+        if txn is not None:
+            total += abs(txn.amount)
+    return round(total, 2)
+
+
+def reconcile(db: Session, user_id: int, client_id: int) -> MatchResult:
     all_bank = (
         db.query(Transaction)
-        .filter(Transaction.user_id == user_id, Transaction.source == "bank")
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.client_id == client_id,
+            Transaction.source == "bank",
+        )
         .all()
     )
     all_internal = (
         db.query(Transaction)
-        .filter(Transaction.user_id == user_id, Transaction.source == "internal")
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.client_id == client_id,
+            Transaction.source == "internal",
+        )
         .all()
     )
 
@@ -81,7 +125,11 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
     # re-pairs or re-flags something already resolved by hand.
     manual_matches = (
         db.query(Match)
-        .filter(Match.user_id == user_id, Match.method == "manual")
+        .filter(
+            Match.user_id == user_id,
+            Match.client_id == client_id,
+            Match.method == "manual",
+        )
         .all()
     )
     manual_bank_ids = {m.bank_txn_id for m in manual_matches}
@@ -89,9 +137,14 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
 
     # Idempotent for the auto engine: clear auto matches and OPEN exceptions,
     # then recompute. Manual matches (and their resolved exceptions) are kept.
-    db.query(Match).filter(Match.user_id == user_id, Match.method != "manual").delete()
+    db.query(Match).filter(
+        Match.user_id == user_id,
+        Match.client_id == client_id,
+        Match.method != "manual",
+    ).delete()
     db.query(ExceptionRecord).filter(
         ExceptionRecord.user_id == user_id,
+        ExceptionRecord.client_id == client_id,
         ExceptionRecord.status == "open",
     ).delete()
     db.commit()
@@ -128,6 +181,7 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
             mismatch = _to_cents(b.amount) != _to_cents(i.amount)
             new_matches.append(Match(
                 user_id=user_id,
+                client_id=client_id,
                 bank_txn_id=b.id,
                 internal_txn_id=i.id,
                 method="reference",
@@ -156,6 +210,7 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
             b, i = bank_by_id[b_ids[0]], internal_by_id[i_ids[0]]
             new_matches.append(Match(
                 user_id=user_id,
+                client_id=client_id,
                 bank_txn_id=b.id,
                 internal_txn_id=i.id,
                 method="amount_date",
@@ -176,6 +231,7 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
             i = internal_by_id[m.internal_txn_id]
             new_exceptions.append(ExceptionRecord(
                 user_id=user_id,
+                client_id=client_id,
                 transaction_id=m.bank_txn_id,
                 match_id=m.id,
                 exception_type="mismatch",
@@ -186,6 +242,7 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
         if tid not in used_bank:
             new_exceptions.append(ExceptionRecord(
                 user_id=user_id,
+                client_id=client_id,
                 transaction_id=tid,
                 exception_type="unmatched",
                 reason="No matching transaction found in the internal list",
@@ -194,6 +251,7 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
         if tid not in used_internal:
             new_exceptions.append(ExceptionRecord(
                 user_id=user_id,
+                client_id=client_id,
                 transaction_id=tid,
                 exception_type="unmatched",
                 reason="No matching transaction found in the bank statement",
@@ -217,32 +275,49 @@ def reconcile(db: Session, user_id: int) -> MatchResult:
         unmatched_internal=len(all_internal) - matched,
         amount_mismatches=mismatches + sum(1 for m in manual_matches if m.amount_mismatch),
         open_exceptions=len(new_exceptions),
+        amount_at_risk=amount_at_risk(db, user_id, client_id),
     )
 
 
-def current_summary(db: Session, user_id: int) -> MatchResult:
+def current_summary(db: Session, user_id: int, client_id: int) -> MatchResult:
     """Read-only snapshot of the current matching state — no recompute, no
     writes. Used by GET /reconcile so the dashboard can render its KPIs on
     load without re-running the engine (POST /reconcile is the only writer)."""
     bank_count = (
         db.query(Transaction)
-        .filter(Transaction.user_id == user_id, Transaction.source == "bank")
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.client_id == client_id,
+            Transaction.source == "bank",
+        )
         .count()
     )
     internal_count = (
         db.query(Transaction)
-        .filter(Transaction.user_id == user_id, Transaction.source == "internal")
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.client_id == client_id,
+            Transaction.source == "internal",
+        )
         .count()
     )
-    matches = db.query(Match).filter(Match.user_id == user_id).all()
+    matches = (
+        db.query(Match)
+        .filter(Match.user_id == user_id, Match.client_id == client_id)
+        .all()
+    )
     method_counts = {"reference": 0, "amount_date": 0, "manual": 0}
     for m in matches:
-        method_counts[m.method] += 1
+        method_counts[m.method] = method_counts.get(m.method, 0) + 1
     used_bank = {m.bank_txn_id for m in matches}
     used_internal = {m.internal_txn_id for m in matches}
     open_exceptions = (
         db.query(ExceptionRecord)
-        .filter(ExceptionRecord.user_id == user_id, ExceptionRecord.status == "open")
+        .filter(
+            ExceptionRecord.user_id == user_id,
+            ExceptionRecord.client_id == client_id,
+            ExceptionRecord.status == "open",
+        )
         .count()
     )
     return MatchResult(
@@ -254,6 +329,7 @@ def current_summary(db: Session, user_id: int) -> MatchResult:
         unmatched_internal=internal_count - len(used_internal),
         amount_mismatches=sum(1 for m in matches if m.amount_mismatch),
         open_exceptions=open_exceptions,
+        amount_at_risk=amount_at_risk(db, user_id, client_id),
     )
 
 
@@ -291,14 +367,22 @@ def suggest_matches(
     """
     opposite = "bank" if txn.source == "internal" else "internal"
     used_ids: set[int] = set()
-    for m in db.query(Match).filter(Match.user_id == txn.user_id).all():
+    for m in (
+        db.query(Match)
+        .filter(Match.user_id == txn.user_id, Match.client_id == txn.client_id)
+        .all()
+    ):
         used_ids.add(m.bank_txn_id)
         used_ids.add(m.internal_txn_id)
 
     scored: list[tuple[int, Transaction, list[str]]] = []
     for c in (
         db.query(Transaction)
-        .filter(Transaction.user_id == txn.user_id, Transaction.source == opposite)
+        .filter(
+            Transaction.user_id == txn.user_id,
+            Transaction.client_id == txn.client_id,
+            Transaction.source == opposite,
+        )
         .all()
     ):
         if c.id == txn.id or c.id in used_ids:
@@ -348,6 +432,7 @@ def create_manual_match(db: Session, exception: ExceptionRecord, match_txn: Tran
     is_bank = txn.source == "bank"
     match = Match(
         user_id=txn.user_id,
+        client_id=txn.client_id,
         bank_txn_id=txn.id if is_bank else match_txn.id,
         internal_txn_id=txn.id if not is_bank else match_txn.id,
         method="manual",

@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   FileDown,
   Loader2,
+  Printer,
   Sparkles,
   Trash2,
   TriangleAlert,
@@ -16,8 +17,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dropzone } from "@/components/upload/dropzone"
-import { api, ApiError, getErrorMessage } from "@/lib/api"
-import type { Import, ImportResult, ReconcileSummary } from "@/lib/api"
+import { api, getErrorMessage } from "@/lib/api"
+import type { Import, ImportResult, ReconcileSummary, TransactionRow } from "@/lib/api"
+import { useClients } from "@/lib/use-clients"
+import { currency } from "@/lib/format"
+import { notifyWorkspaceChanged } from "@/lib/workspace-events"
 import { cn } from "@/lib/utils"
 
 type RunResult = {
@@ -35,14 +39,17 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 function PreviewTable({
   title,
   result,
+  rows = [],
   color,
 }: {
   title: string
   result: ImportResult
+  rows?: TransactionRow[]
   color: "sky" | "violet"
 }) {
   const badgeColor = color === "sky" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"
-  const rows = result.rejections.length > 0 ? result.rejections.slice(0, 10) : []
+  const rejected = result.rejections.slice(0, 10)
+  const preview = rows.slice(0, 10)
 
   return (
     <div className="space-y-3">
@@ -60,35 +67,72 @@ function PreviewTable({
         </div>
       </div>
 
-      {rows.length > 0 ? (
+      {rejected.length > 0 ? (
         <div className="rounded-lg border border-border bg-destructive/5 p-3">
           <p className="text-xs font-medium text-destructive mb-2">
             Rejected rows (first 10):
           </p>
           <ul className="space-y-1 text-xs text-muted-foreground max-h-48 overflow-y-auto">
-            {rows.map((r, i) => (
+            {rejected.map((r, i) => (
               <li key={i} className="font-mono">
                 Row {r.row}: {r.reason}
               </li>
             ))}
           </ul>
         </div>
-      ) : (
-        <div className="rounded-lg border border-border p-3">
-          <p className="text-xs font-medium text-muted-foreground mb-2">
-            First {Math.min(10, result.imported)} rows:
-          </p>
-          <p className="text-xs text-muted-foreground italic">
-            (Preview shows successful imports; rejected rows would appear above)
-          </p>
+      ) : null}
+
+      {preview.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-secondary/60 text-left">
+                <th className="px-3 py-2 font-medium text-muted-foreground">Date</th>
+                <th className="px-3 py-2 font-medium text-muted-foreground">Description</th>
+                <th className="hidden px-3 py-2 font-medium text-muted-foreground sm:table-cell">
+                  Reference
+                </th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preview.map((row) => (
+                <tr key={row.id} className="border-t border-border">
+                  <td className="whitespace-nowrap px-3 py-1.5 text-foreground">
+                    {dateFormatter.format(new Date(`${row.date}T00:00:00`))}
+                  </td>
+                  <td className="max-w-52 truncate px-3 py-1.5 text-foreground">
+                    {row.description ?? "—"}
+                  </td>
+                  <td className="hidden px-3 py-1.5 font-mono text-muted-foreground sm:table-cell">
+                    {row.reference ?? "—"}
+                  </td>
+                  <td
+                    className={cn(
+                      "whitespace-nowrap px-3 py-1.5 text-right font-mono",
+                      row.amount < 0 ? "text-destructive" : "text-success",
+                    )}
+                  >
+                    {currency.format(row.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {result.imported > preview.length ? (
+            <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+              Showing the first {preview.length} of {result.imported} rows.
+            </p>
+          ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
 
 export default function UploadPage() {
   const router = useRouter()
+  const { activeId, activeClient, loading: clientsLoading, error: clientsError } = useClients()
   const [bankFile, setBankFile] = useState<File | null>(null)
   const [internalFile, setInternalFile] = useState<File | null>(null)
   const [running, setRunning] = useState(false)
@@ -102,27 +146,35 @@ export default function UploadPage() {
   const [downloadingTemplate, setDownloadingTemplate] = useState<"bank" | "internal" | null>(
     null,
   )
-  const [preview, setPreview] = useState<{ bank: ImportResult; internal: ImportResult } | null>(
-    null,
-  )
+  const [preview, setPreview] = useState<{
+    bank: ImportResult
+    internal: ImportResult
+    bankRows: TransactionRow[]
+    internalRows: TransactionRow[]
+  } | null>(null)
   const [previewing, setPreviewing] = useState(false)
 
   const loadImports = useCallback(async () => {
+    if (activeId === null) return
     try {
-      setImports(await api.getImports())
+      setImports(await api.getImports(activeId))
       setHistoryError(null)
     } catch (err) {
       setHistoryError(getErrorMessage(err))
     } finally {
       setImportsLoading(false)
     }
-  }, [])
+  }, [activeId])
 
   useEffect(() => {
     void loadImports()
   }, [loadImports])
 
   async function handlePreview() {
+    if (activeId === null) {
+      setError("Choose a client in the top bar first.")
+      return
+    }
     if (!bankFile || !internalFile) {
       setError("Select both a bank statement and an internal ledger CSV first.")
       return
@@ -132,10 +184,17 @@ export default function UploadPage() {
     setPreview(null)
     try {
       const [bank, internal] = await Promise.all([
-        api.uploadCsv("bank", bankFile),
-        api.uploadCsv("internal", internalFile),
+        api.uploadCsv("bank", bankFile, activeId),
+        api.uploadCsv("internal", internalFile, activeId),
       ])
-      setPreview({ bank, internal })
+      // Show what was actually parsed, not just the row counts — this is the
+      // moment a reviewer catches a wrong column mapping before running.
+      const [bankRows, internalRows] = await Promise.all([
+        api.getImportTransactions(bank.import_id),
+        api.getImportTransactions(internal.import_id),
+      ])
+      setPreview({ bank, internal, bankRows, internalRows })
+      void loadImports()
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -152,7 +211,7 @@ export default function UploadPage() {
     setError(null)
     setResult(null)
     try {
-      const summary = await api.runReconcile()
+      const summary = await api.runReconcile(activeId)
       setResult({ bank: preview.bank, internal: preview.internal, summary })
       void loadImports()
     } catch (err) {
@@ -175,6 +234,7 @@ export default function UploadPage() {
       setImports((prev) => prev.filter((i) => i.id !== id))
       setResult(null)
       setConfirmingDeleteId(null)
+      notifyWorkspaceChanged()
     } catch (err) {
       setHistoryError(getErrorMessage(err))
     } finally {
@@ -199,17 +259,46 @@ export default function UploadPage() {
     <div className="flex flex-1 flex-col">
       <AppTopbar
         title="Upload statements"
-        description="Import a bank statement and internal ledger, then run reconciliation"
+        description={
+          activeClient
+            ? `Import a bank statement and internal ledger for ${activeClient.name}`
+            : "Import a bank statement and internal ledger, then run reconciliation"
+        }
       />
 
       <div className="flex-1 space-y-6 px-6 py-6">
+        {clientsLoading ? (
+          <p className="text-sm text-muted-foreground">Loading workspace…</p>
+        ) : clientsError ? (
+          <Card className="gap-2 p-6">
+            <p className="text-sm font-medium text-destructive">Could not load your clients</p>
+            <p className="text-sm text-muted-foreground">{clientsError}</p>
+          </Card>
+        ) : !activeClient ? (
+          <Card className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+            <p className="text-base font-semibold text-foreground">Create a client first</p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Every upload belongs to a client, so start by adding one in the Clients page.
+            </p>
+            <Button
+              nativeButton={false}
+              render={<a href="/clients" />}
+              className="bg-accent font-medium text-accent-foreground hover:bg-accent/90"
+            >
+              Go to clients
+            </Button>
+          </Card>
+        ) : (
+          <>
         <div className="grid min-w-0 gap-6 lg:grid-cols-3">
           <Card className="min-w-0 gap-5 lg:col-span-2">
             <CardHeader>
-              <CardTitle className="text-base font-semibold">New reconciliation run</CardTitle>
+              <CardTitle className="text-base font-semibold">
+                New reconciliation run — {activeClient.name}
+              </CardTitle>
               <CardDescription>
                 Files are matched automatically once both uploads are in, then exceptions are
-                flagged for review.
+                flagged for review. This run is scoped to this client only.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -326,15 +415,17 @@ export default function UploadPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-2">
                   <PreviewTable
                     title="Bank statement"
                     result={preview.bank}
+                    rows={preview.bankRows}
                     color="sky"
                   />
                   <PreviewTable
                     title="Internal records"
                     result={preview.internal}
+                    rows={preview.internalRows}
                     color="violet"
                   />
                 </div>
@@ -402,12 +493,22 @@ export default function UploadPage() {
                 <p className="text-sm font-medium text-muted-foreground">Matched</p>
                 <p className="mt-1 font-mono text-xl font-semibold text-success">
                   {result.summary.matched}
+                  <span className="ml-2 text-sm font-medium text-muted-foreground">
+                    of {result.summary.bank_total} bank rows
+                    {result.summary.bank_total > 0
+                      ? ` · ${Math.round((result.summary.matched / result.summary.bank_total) * 100)}%`
+                      : ""}
+                  </span>
                 </p>
               </div>
               <div className="rounded-lg bg-amber-50 p-4">
-                <p className="text-sm font-medium text-muted-foreground">Open exceptions</p>
+                <p className="text-sm font-medium text-muted-foreground">Amount at risk</p>
                 <p className="mt-1 font-mono text-xl font-semibold text-amber-600">
-                  {result.summary.open_exceptions}
+                  {currency.format(result.summary.amount_at_risk)}
+                  <span className="ml-2 text-sm font-medium text-muted-foreground">
+                    {result.summary.open_exceptions} open exception
+                    {result.summary.open_exceptions === 1 ? "" : "s"}
+                  </span>
                 </p>
               </div>
             </CardContent>
@@ -444,6 +545,15 @@ export default function UploadPage() {
                 onClick={() => router.push("/exceptions")}
               >
                 Review {result.summary.open_exceptions} exceptions
+              </Button>
+              <Button
+                nativeButton={false}
+                render={<a href={`/workpaper?client_id=${result.summary.client_id}`} />}
+                variant="outline"
+                className="font-medium"
+              >
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Workpaper
               </Button>
             </div>
           </Card>
@@ -543,6 +653,8 @@ export default function UploadPage() {
             )}
           </CardContent>
         </Card>
+          </>
+        )}
       </div>
     </div>
   )
