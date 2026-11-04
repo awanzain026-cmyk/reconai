@@ -255,13 +255,13 @@ export default function ClientsPage() {
                         {client.open_exceptions}
                       </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         At risk
                       </p>
                       <p
                         className={cn(
-                          "mt-0.5 font-mono text-lg font-semibold",
+                          "mt-0.5 whitespace-nowrap font-mono text-sm font-semibold sm:text-lg",
                           client.amount_at_risk > 0 ? "text-destructive" : "text-success",
                         )}
                       >
